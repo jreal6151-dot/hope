@@ -643,16 +643,28 @@ class DockerManager:
                     
                     # Some containers exit immediately. Force remove and recreate with keep-alive
                     try:
-                        # Get the image of the container
-                        image_info = subprocess.run(
-                            ["docker", "inspect", "--format", "{{.Config.Image}}", container_id],
+                        # Get the image and name of the container before removal
+                        container_info = subprocess.run(
+                            [
+                                "docker",
+                                "inspect",
+                                "--format",
+                                "{{.Config.Image}}|{{.Name}}",
+                                container_id,
+                            ],
                             capture_output=True,
                             text=True,
                             check=False
                         )
                         
-                        if image_info.returncode == 0:
-                            image_name = image_info.stdout.strip()
+                        if container_info.returncode == 0:
+                            info_parts = container_info.stdout.strip().split("|", maxsplit=1)
+                            image_name = info_parts[0].strip()
+                            container_name = (
+                                info_parts[1].strip().lstrip("/")
+                                if len(info_parts) > 1 and info_parts[1].strip()
+                                else f"cai-{image_name.replace('/', '-')}"
+                            )
                             
                             # Remove the old container
                             subprocess.run(
@@ -662,12 +674,11 @@ class DockerManager:
                                 check=False
                             )
                             
-                            # Create a new container with the same ID (hopefully)
-                            # Using explicit keep-alive command
+                            # Recreate with original container name and keep-alive command
                             new_container = subprocess.run(
                                 [
                                     "docker", "run", "-d", 
-                                    "--name", f"cai-{image_name.replace('/', '-')}",
+                                    "--name", container_name,
                                     image_name,
                                     "/bin/sh", "-c", "while true; do sleep 1000; done"
                                 ],
